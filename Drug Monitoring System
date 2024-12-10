@@ -1,0 +1,124 @@
+#include <Adafruit_CircuitPlayground.h>
+#include <PulseSensorPlayground.h>
+
+// Pin Definitions
+const int hrSensorPin = 10;   // Heart rate sensor signal pin
+const int switchPin = 21;     // Mechanical switch
+
+// Simulated Heart Rate Values for each state (Safe, Warning, Critical)
+const int simulatedHeartRateSafe = 80;      // Safe range 80 bpm
+const int simulatedHeartRateWarningLow = 50;  // Low warning range 50 bpm
+const int simulatedHeartRateWarningHigh = 110; // High warning range 110 bpm
+const int simulatedHeartRateCriticalLow = 30;  // Critical low range 30 bpm
+const int simulatedHeartRateCriticalHigh = 130; // Critical high range 130 bpm
+
+// Time interval for changing simulated heart rate (30 seconds)
+unsigned long previousMillis = 0; //to check the last time interval
+const long interval = 30000;  // 30 seconds for each simulated heart rate
+
+int currentSimulatedHeartRate = simulatedHeartRateSafe; // Start with Safe value
+bool isSimulated = false;  // Flag to check if in simulated or real time mode
+bool caregiverAlertActive = false;  // Flag to track if caregiver alert is active
+
+PulseSensorPlayground pulseSensor(hrSensorPin);//pulse sensor object
+
+void setup() {
+  CircuitPlayground.begin();//initialize the adafruit playground
+  pinMode(switchPin, INPUT_PULLUP);//configer switch with pull up resistor
+  Serial.begin(9600);//serial communication at 9600 baud
+  pulseSensor.analogInput(hrSensorPin);
+  pulseSensor.begin();//initialize pulse sensor
+}
+
+void loop() {
+  int switchState = digitalRead(switchPin);//read the state of the mechanical switch
+
+  if (switchState == LOW && !isSimulated) {//to check if the switch is in simulated or real time
+    isSimulated = true;//simulated mode
+    previousMillis = millis();
+    Serial.println("Switch is in state 0 (Simulated Mode)");
+  } 
+  else if (switchState == HIGH && isSimulated) {
+    isSimulated = false;//realtime mode
+    Serial.println("Switch is in state 1 (Real-Time Mode)");
+  }
+
+  int heartRate = 0;//variable to store heartrate
+
+  if (isSimulated) {//simulate hertrate changes at defined intervals
+    unsigned long currentMillis = millis();
+    if (currentMillis - previousMillis >= interval) {
+      previousMillis = currentMillis;
+      currentSimulatedHeartRate = getSimulatedHeartRate();
+    }
+    heartRate = currentSimulatedHeartRate;
+  } else {
+    heartRate = pulseSensor.getBeatsPerMinute();
+    if (heartRate == 0) {
+      Serial.println("No valid heart rate detected. Check the sensor.");//error message if no heartrate is detected
+    } else {
+      Serial.print("Heart Rate Detected: ");
+      Serial.println(heartRate);
+    }
+  }
+
+  Serial.print("Heart Rate: ");//print the current heart rate
+  Serial.println(heartRate);
+  
+  if (!caregiverAlertActive) {
+    if (heartRate < 40 || heartRate > 120) {
+      setLEDColor(0xFF0000);  // set LEDs to red
+      CircuitPlayground.playTone(1000, 500);//play high pitched tone
+    } 
+    else if ((heartRate >= 40 && heartRate < 60) || (heartRate > 100 && heartRate <= 120)) {
+      setLEDColor(0xFFFF00);  // set LEDs to yellow
+      CircuitPlayground.playTone(500, 500);//plat medium pitched tone
+    } 
+    else {
+      setLEDColor(0x00FF00);  // set LEDs to green
+    }
+  }
+//trigger caregiver alert if button is pressed
+  if (CircuitPlayground.rightButton()) {
+    alertCaregiver();
+  }
+
+  delay(100);//short delay for loop stability
+}
+
+//function to determine the simulated heartrate besed on current state
+int getSimulatedHeartRate() {
+  unsigned long currentMillis = millis();//to get current time
+  int stateIndex = (currentMillis / interval) % 5;//calculate state index (1-4)
+
+  switch (stateIndex) {
+    case 0: return simulatedHeartRateSafe;//safe
+    case 1: return simulatedHeartRateWarningLow;//low warning state
+    case 2: return simulatedHeartRateWarningHigh;//high warning state
+    case 3: return simulatedHeartRateCriticalLow;//critical low state
+    default: return simulatedHeartRateCriticalHigh;//critical high state
+  }
+}
+//function to set the color of the LEDs
+void setLEDColor(uint32_t color) {
+  for (int i = 0; i < 10; i++) {//looping through all 10
+    CircuitPlayground.setPixelColor(i, color);
+  }
+}
+//function to alert the caregiver
+void alertCaregiver() {
+  Serial.println("Caregiver Alert: Assistance Needed!");//rint alert message
+  caregiverAlertActive = true;//activate caregiver alert flag
+  
+  // Set all LEDs to blue
+  setLEDColor(0x0000FF);  
+  
+  // Play alert tone
+  CircuitPlayground.playTone(3000, 30000);  // High-pitched alert tone for 30 second
+  
+  // Keep the blue light on for 30 seconds
+  delay(30000);
+  
+  caregiverAlertActive = false;
+  // Reset caregiver alert flag
+}
